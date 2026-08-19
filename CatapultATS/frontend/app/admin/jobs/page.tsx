@@ -144,6 +144,33 @@ export default function AdminJobsPage() {
     await load();
   }
 
+  // Two-step delete: try a plain delete first. If the job has applications
+  // attached, the backend blocks it with a 409 and tells us how many —
+  // surface that as a confirm() before retrying with force=true, so
+  // deleting a job never silently wipes out real candidate data without
+  // the admin explicitly seeing the count first.
+  async function handleDelete(job: Job) {
+    const token = await ensureFreshToken();
+    if (!token) { window.location.href = '/login'; return; }
+    try {
+      await api.delete(`/jobs/${job.id}`, token);
+      await load();
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 409) {
+        const applicantCount = job._count?.applications ?? 0;
+        const confirmed = window.confirm(
+          `"${job.title}" has ${applicantCount} application(s) attached. Deleting it will permanently remove ` +
+          `those applications too — this can't be undone. Delete anyway?`,
+        );
+        if (!confirmed) return;
+        await api.delete(`/jobs/${job.id}?force=true`, token);
+        await load();
+        return;
+      }
+      alert(err instanceof ApiError ? err.message : 'Could not delete this job posting.');
+    }
+  }
+
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
   function copyApplyLink(job: Job, region: 'uae' | 'india') {
@@ -327,6 +354,9 @@ export default function AdminJobsPage() {
                   )}
                   <button type="button" onClick={() => openEdit(job)} className="text-sm text-accent hover:underline">
                     Edit
+                  </button>
+                  <button type="button" onClick={() => handleDelete(job)} className="text-sm text-status-rejected hover:underline">
+                    Delete
                   </button>
                 </div>
               </td>

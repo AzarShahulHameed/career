@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Patch, Post, UseGuards, UseInterceptors, UploadedFile } from '@nestjs/common';
+import { Body, Controller, Get, Patch, Post, Req, UseGuards, UseInterceptors, UploadedFile } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -20,15 +20,15 @@ export class SettingsController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.ADMIN)
   @Patch()
-  update(@Body() dto: UpdateSettingsDto) {
-    return this.settingsService.update(dto);
+  update(@Body() dto: UpdateSettingsDto, @Req() req: any) {
+    return this.settingsService.update(dto, req.user.id);
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.ADMIN)
   @Post('logo')
   @UseInterceptors(FileInterceptor('logo', { limits: { fileSize: 2 * 1024 * 1024 } }))
-  updateLogo(@UploadedFile() file: Express.Multer.File) {
-    return this.settingsService.updateLogo(file);
+  updateLogo(@UploadedFile() file: Express.Multer.File, @Req() req: any) {
+    return this.settingsService.updateLogo(file, req.user.id);
   }
 }

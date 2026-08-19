@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -34,21 +34,28 @@ export class JobsController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.ADMIN)
   @Post()
-  create(@Body() dto: CreateJobDto) {
-    return this.jobsService.create(dto);
+  create(@Body() dto: CreateJobDto, @Req() req: any) {
+    return this.jobsService.create(dto, req.user.id);
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.ADMIN)
   @Patch(':id')
-  update(@Param('id') id: string, @Body() dto: UpdateJobDto) {
-    return this.jobsService.update(id, dto);
+  update(@Param('id') id: string, @Body() dto: UpdateJobDto, @Req() req: any) {
+    return this.jobsService.update(id, dto, req.user.id);
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.ADMIN)
   @Patch(':id/close')
-  close(@Param('id') id: string) {
-    return this.jobsService.close(id);
+  close(@Param('id') id: string, @Req() req: any) {
+    return this.jobsService.close(id, req.user.id);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.ADMIN)
+  @Delete(':id')
+  remove(@Param('id') id: string, @Query('force') force: string, @Req() req: any) {
+    return this.jobsService.remove(id, req.user.id, force === 'true');
   }
 }

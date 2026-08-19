@@ -5,6 +5,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { CloudinaryService } from '../cloudinary/cloudinary.service';
 import { ResumeTextExtractorService } from '../ats/resume-text-extractor.service';
 import { AtsScoringService } from '../ats/ats-scoring.service';
+import { PushService } from '../push/push.service';
 import { CreateApplicationDto } from './dto/create-application.dto';
 import { UpdateStatusDto } from './dto/update-status.dto';
 import { QueryApplicationsDto } from './dto/query-applications.dto';
@@ -30,6 +31,7 @@ export class ApplicationsService {
     private events: EventEmitter2,
     private resumeTextExtractor: ResumeTextExtractorService,
     private atsScoring: AtsScoringService,
+    private push: PushService,
   ) {}
 
   // A job may not have a Company assigned (older postings, or an org that
@@ -236,6 +238,18 @@ export class ApplicationsService {
           ApplicationStatus.REJECTED,
         ),
       );
+    }
+
+    // Ping every admin/reviewer's browser with a new-applicant notification —
+    // skipped for ones the ATS engine already auto-rejected, since those
+    // aren't actionable and would just be noise; a human still sees them in
+    // the list, they just don't page anyone.
+    if (!application.rejectionEvent) {
+      await this.push.notifyAllActiveUsers({
+        title: 'New application',
+        body: `${application.application.candidateName} applied for ${job.title}`,
+        url: `/admin/applications/${application.application.id}`,
+      });
     }
 
     return application.application;

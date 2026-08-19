@@ -2,12 +2,14 @@
   "name": "catapult-careers-backend",
   "version": "1.0.0",
   "scripts": {
+    "prebuild": "rimraf dist tsconfig.build.tsbuildinfo",
     "build": "nest build",
     "start": "nest start",
     "start:dev": "nest start --watch",
     "start:prod": "node dist/main",
     "prisma:generate": "prisma generate",
-    "prisma:migrate": "prisma migrate dev"
+    "prisma:migrate": "prisma migrate dev",
+    "prestart:dev": "rimraf dist tsconfig.build.tsbuildinfo"
   },
   "dependencies": {
     "@nestjs/common": "^10.4.0",
@@ -31,7 +33,8 @@
     "resend": "^4.0.1",
     "rxjs": "^7.8.1",
     "pdf-parse": "^1.1.1",
-    "mammoth": "^1.8.0"
+    "mammoth": "^1.8.0",
+    "web-push": "^3.6.7"
   },
   "devDependencies": {
     "@nestjs/cli": "^10.4.5",
@@ -41,6 +44,8 @@
     "@types/node": "^20.16.0",
     "@types/passport-jwt": "^4.0.1",
     "prisma": "^5.20.0",
-    "typescript": "^5.5.4"
+    "typescript": "^5.5.4",
+    "rimraf": "^5.0.5",
+    "@types/web-push": "^3.6.4"
   }
 }

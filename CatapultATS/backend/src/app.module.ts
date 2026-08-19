@@ -13,6 +13,8 @@ import { UsersModule } from './users/users.module';
 import { SettingsModule } from './settings/settings.module';
 import { CompaniesModule } from './companies/companies.module';
 import { DashboardModule } from './dashboard/dashboard.module';
+import { AuditLogModule } from './audit-log/audit-log.module';
+import { PushModule } from './push/push.module';
 
 @Module({
   imports: [
@@ -29,6 +31,8 @@ import { DashboardModule } from './dashboard/dashboard.module';
     SettingsModule,
     CompaniesModule,
     DashboardModule,
+    AuditLogModule,
+    PushModule,
   ],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })

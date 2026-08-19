@@ -45,6 +45,22 @@ model User {
   applications  Application[] @relation("ReviewerApplications")
   statusEvents  StatusEvent[]
   refreshTokens RefreshToken[]
+  auditLogs     AuditLog[]     @relation("AuditActor")
+  pushSubscriptions PushSubscription[]
+}
+
+// One row per browser/device the user has enabled notifications on
+// (Web Push API). A user can have several — e.g. desktop + phone.
+model PushSubscription {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  createdAt DateTime @default(now())
+
+  @@index([userId])
 }
 
 model RefreshToken {
@@ -221,4 +237,26 @@ model EmailTemplate {
   subject   String
   bodyHtml  String            @db.Text
   updatedAt DateTime          @updatedAt
+}
+
+// General-purpose audit trail — separate from StatusEvent (which already
+// covers application status changes in full detail: from/to/note/reviewer).
+// Covers everything else an admin can do: creating/editing/deleting job
+// postings, managing team members, changing org settings. One row per
+// action, human-readable description first — not a full diff/versioning
+// system, just "who did what, when."
+model AuditLog {
+  id          String   @id @default(cuid())
+  actorId     String
+  actor       User     @relation("AuditActor", fields: [actorId], references: [id])
+  action      String   // e.g. "job.created", "job.deleted", "user.deleted", "settings.updated"
+  entityType  String   // e.g. "JobPosting", "User", "Settings"
+  entityId    String?
+  description String   // e.g. Deleted job posting "Associate" (12 applications removed)
+  metadata    Json?
+  createdAt   DateTime @default(now())
+
+  @@index([entityType, entityId])
+  @@index([actorId])
+  @@index([createdAt])
 }

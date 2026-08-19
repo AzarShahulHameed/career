@@ -1,12 +1,13 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
 import { Region } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateJobDto } from './dto/create-job.dto';
 import { UpdateJobDto } from './dto/update-job.dto';
+import { AuditLogService } from '../audit-log/audit-log.service';
 
 @Injectable()
 export class JobsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService, private auditLog: AuditLogService) {}
 
   // Public: only active postings, optionally filtered by region (a BOTH job
   // shows on either regional page). Featured postings sort first, matching
@@ -48,41 +49,52 @@ export class JobsService {
     return job;
   }
 
-  create(dto: CreateJobDto) {
-    return this.prisma.jobPosting.create({
-      data: {
-        title: dto.title,
-        department: dto.department,
-        location: dto.location,
-        employmentType: dto.employmentType,
-        region: dto.region,
-        description: dto.description,
-        responsibilities: dto.responsibilities ?? [],
-        requirements: dto.requirements ?? [],
-        niceToHave: dto.niceToHave ?? [],
-        salaryRange: dto.salaryRange,
-        deadline: dto.deadline ? new Date(dto.deadline) : undefined,
-        isFeatured: dto.isFeatured ?? false,
-        companyId: dto.companyId,
-        screeningQuestions: dto.screeningQuestions?.length
-          ? {
-              create: dto.screeningQuestions.map((q, i) => ({
-                question: q.question,
-                type: q.type,
-                options: q.options ?? [],
-                required: q.required ?? true,
-                order: q.order ?? i,
-                disqualifyingAnswer: q.disqualifyingAnswer || null,
-              })),
-            }
-          : undefined,
-      },
-      include: { screeningQuestions: true },
-    });
+  create(dto: CreateJobDto, actorId: string) {
+    return this.prisma.jobPosting
+      .create({
+        data: {
+          title: dto.title,
+          department: dto.department,
+          location: dto.location,
+          employmentType: dto.employmentType,
+          region: dto.region,
+          description: dto.description,
+          responsibilities: dto.responsibilities ?? [],
+          requirements: dto.requirements ?? [],
+          niceToHave: dto.niceToHave ?? [],
+          salaryRange: dto.salaryRange,
+          deadline: dto.deadline ? new Date(dto.deadline) : undefined,
+          isFeatured: dto.isFeatured ?? false,
+          companyId: dto.companyId,
+          screeningQuestions: dto.screeningQuestions?.length
+            ? {
+                create: dto.screeningQuestions.map((q, i) => ({
+                  question: q.question,
+                  type: q.type,
+                  options: q.options ?? [],
+                  required: q.required ?? true,
+                  order: q.order ?? i,
+                  disqualifyingAnswer: q.disqualifyingAnswer || null,
+                })),
+              }
+            : undefined,
+        },
+        include: { screeningQuestions: true },
+      })
+      .then(async (job) => {
+        await this.auditLog.log({
+          actorId,
+          action: 'job.created',
+          entityType: 'JobPosting',
+          entityId: job.id,
+          description: `Created job posting "${job.title}"`,
+        });
+        return job;
+      });
   }
 
-  async update(id: string, dto: UpdateJobDto) {
-    const exists = await this.prisma.jobPosting.findUnique({ where: { id }, select: { id: true } });
+  async update(id: string, dto: UpdateJobDto, actorId: string) {
+    const exists = await this.prisma.jobPosting.findUnique({ where: { id }, select: { id: true, title: true } });
     if (!exists) throw new NotFoundException('Job posting not found');
 
     // Screening questions: the admin form submits its full current list.
@@ -91,8 +103,8 @@ export class JobsService {
     // present in the incoming list are removed — hard-deleted if nothing
     // has answered them yet, archived (kept, hidden from new applicants) if
     // they already have candidate answers on record.
-    return this.prisma.$transaction(async (tx) => {
-      const job = await tx.jobPosting.update({
+    const job = await this.prisma.$transaction(async (tx) => {
+      const updated = await tx.jobPosting.update({
         where: { id },
         data: {
           ...(dto.title !== undefined ? { title: dto.title } : {}),
@@ -145,12 +157,75 @@ export class JobsService {
         }
       }
 
-      return job;
+      return updated;
     });
+
+    await this.auditLog.log({
+      actorId,
+      action: 'job.updated',
+      entityType: 'JobPosting',
+      entityId: id,
+      description: `Updated job posting "${job.title}"`,
+    });
+
+    return job;
   }
 
-  async close(id: string) {
-    await this.findOne(id);
-    return this.prisma.jobPosting.update({ where: { id }, data: { isActive: false } });
+  async close(id: string, actorId: string) {
+    const job = await this.findOne(id);
+    const updated = await this.prisma.jobPosting.update({ where: { id }, data: { isActive: false } });
+    await this.auditLog.log({
+      actorId,
+      action: 'job.closed',
+      entityType: 'JobPosting',
+      entityId: id,
+      description: `Closed job posting "${job.title}"`,
+    });
+    return updated;
+  }
+
+  // Delete is deliberately two-step: a job with real applications attached
+  // requires an explicit `force` flag, and deleting it removes those
+  // applications (and their status history) permanently — this exists
+  // specifically so test/junk postings created during setup can be cleaned
+  // out of a database that's since started collecting real applicants,
+  // without silently nuking real candidate data on an ordinary delete.
+  async remove(id: string, actorId: string, force: boolean) {
+    const job = await this.prisma.jobPosting.findUnique({
+      where: { id },
+      include: { _count: { select: { applications: true } } },
+    });
+    if (!job) throw new NotFoundException('Job posting not found');
+
+    if (job._count.applications > 0 && !force) {
+      throw new ConflictException(
+        `This job has ${job._count.applications} application(s) attached. Deleting it will permanently remove them too — pass force=true to confirm.`,
+      );
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      if (job._count.applications > 0) {
+        const applications = await tx.application.findMany({ where: { jobId: id }, select: { id: true } });
+        const applicationIds = applications.map((a) => a.id);
+        await tx.statusEvent.deleteMany({ where: { applicationId: { in: applicationIds } } });
+        // ScreeningAnswer rows cascade automatically (onDelete: Cascade on Application).
+        await tx.application.deleteMany({ where: { jobId: id } });
+      }
+      // ScreeningQuestion rows cascade automatically (onDelete: Cascade on JobPosting).
+      await tx.jobPosting.delete({ where: { id } });
+    });
+
+    await this.auditLog.log({
+      actorId,
+      action: 'job.deleted',
+      entityType: 'JobPosting',
+      entityId: id,
+      description: `Deleted job posting "${job.title}"${
+        job._count.applications > 0 ? ` (${job._count.applications} application(s) removed with it)` : ''
+      }`,
+      metadata: { title: job.title, applicationsRemoved: job._count.applications },
+    });
+
+    return { success: true, applicationsRemoved: job._count.applications };
   }
 }

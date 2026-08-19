@@ -6,10 +6,11 @@ import { EmailService } from '../email/email.service';
 import { wrapEmailBody } from '../email/templates/status-templates';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
+import { AuditLogService } from '../audit-log/audit-log.service';
 
 @Injectable()
 export class UsersService {
-  constructor(private prisma: PrismaService, private emailService: EmailService) {}
+  constructor(private prisma: PrismaService, private emailService: EmailService, private auditLog: AuditLogService) {}
 
   // "Owner" = the earliest-created real account — determined dynamically,
   // not a manual flag, so this protects whoever actually set the system up
@@ -23,7 +24,7 @@ export class UsersService {
     return owner?.id ?? null;
   }
 
-  async create(dto: CreateUserDto) {
+  async create(dto: CreateUserDto, actorId: string) {
     const email = dto.email.toLowerCase().trim();
     const existing = await this.prisma.user.findUnique({ where: { email } });
     if (existing) {
@@ -49,6 +50,14 @@ export class UsersService {
     });
 
     await this.sendInviteEmail(email, dto.name, tempPassword);
+
+    await this.auditLog.log({
+      actorId,
+      action: 'user.created',
+      entityType: 'User',
+      entityId: user.id,
+      description: `Invited ${dto.name} (${email}) as ${dto.role ?? 'REVIEWER'}`,
+    });
 
     const { passwordHash: _omit, ...safeUser } = user;
     return safeUser;
@@ -111,21 +120,40 @@ export class UsersService {
     if (ownerId === id) {
       throw new ConflictException('This is the account owner and cannot be deactivated.');
     }
-    return this.prisma.user.update({ where: { id }, data: { isActive: false } });
-  }
-
-  async reactivate(id: string) {
     const target = await this.prisma.user.findUnique({ where: { id } });
     if (!target) throw new NotFoundException('User not found');
-    return this.prisma.user.update({ where: { id }, data: { isActive: true } });
+    const updated = await this.prisma.user.update({ where: { id }, data: { isActive: false } });
+    await this.auditLog.log({
+      actorId: requestingUserId,
+      action: 'user.deactivated',
+      entityType: 'User',
+      entityId: id,
+      description: `Deactivated ${target.name} (${target.email})`,
+    });
+    return updated;
+  }
+
+  async reactivate(id: string, requestingUserId: string) {
+    const target = await this.prisma.user.findUnique({ where: { id } });
+    if (!target) throw new NotFoundException('User not found');
+    const updated = await this.prisma.user.update({ where: { id }, data: { isActive: true } });
+    await this.auditLog.log({
+      actorId: requestingUserId,
+      action: 'user.reactivated',
+      entityType: 'User',
+      entityId: id,
+      description: `Reactivated ${target.name} (${target.email})`,
+    });
+    return updated;
   }
 
   // Hard delete — distinct from deactivate. Only permitted when the account
-  // has no StatusEvent history (that FK is required/non-nullable, so
-  // deleting a user with review activity would either throw a raw DB
-  // constraint error or silently erase audit trail rows — neither is
-  // acceptable). Anyone who has actually reviewed something should be
-  // deactivated instead, which keeps their name on the history they made.
+  // has no StatusEvent or AuditLog history (both FKs are required/
+  // non-nullable, so deleting a user with any recorded activity would
+  // either throw a raw DB constraint error or silently erase audit trail
+  // rows — neither is acceptable). Anyone who has actually done anything
+  // recorded should be deactivated instead, which keeps their name on the
+  // history they made.
   async remove(id: string, requestingUserId: string) {
     if (id === requestingUserId) {
       throw new ConflictException("You can't delete your own account.");
@@ -137,10 +165,13 @@ export class UsersService {
     const target = await this.prisma.user.findUnique({ where: { id } });
     if (!target) throw new NotFoundException('User not found');
 
-    const activityCount = await this.prisma.statusEvent.count({ where: { changedById: id } });
-    if (activityCount > 0) {
+    const [statusEventCount, auditLogCount] = await Promise.all([
+      this.prisma.statusEvent.count({ where: { changedById: id } }),
+      this.prisma.auditLog.count({ where: { actorId: id } }),
+    ]);
+    if (statusEventCount > 0 || auditLogCount > 0) {
       throw new ConflictException(
-        'This account has review activity on record and can\'t be permanently deleted — deactivate it instead to keep the audit trail intact.',
+        'This account has activity on record and can\'t be permanently deleted — deactivate it instead to keep the audit trail intact.',
       );
     }
 
@@ -151,6 +182,17 @@ export class UsersService {
     await this.prisma.application.updateMany({ where: { reviewerId: id }, data: { reviewerId: null } });
     await this.prisma.refreshToken.deleteMany({ where: { userId: id } });
     await this.prisma.user.delete({ where: { id } });
+
+    // Logged under the actor doing the deleting, not the deleted user —
+    // there's no longer a User row for the deleted account to attach to.
+    await this.auditLog.log({
+      actorId: requestingUserId,
+      action: 'user.deleted',
+      entityType: 'User',
+      entityId: id,
+      description: `Deleted ${target.name} (${target.email})`,
+    });
+
     return { success: true };
   }
 }

@@ -15,8 +15,8 @@ export class UsersController {
   constructor(private usersService: UsersService) {}
 
   @Post()
-  create(@Body() dto: CreateUserDto) {
-    return this.usersService.create(dto);
+  create(@Body() dto: CreateUserDto, @Req() req: any) {
+    return this.usersService.create(dto, req.user.id);
   }
 
   @Get()
@@ -35,8 +35,8 @@ export class UsersController {
   }
 
   @Patch(':id/reactivate')
-  reactivate(@Param('id') id: string) {
-    return this.usersService.reactivate(id);
+  reactivate(@Param('id') id: string, @Req() req: any) {
+    return this.usersService.reactivate(id, req.user.id);
   }
 
   @Delete(':id')

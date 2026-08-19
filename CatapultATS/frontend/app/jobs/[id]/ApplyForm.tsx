@@ -75,10 +75,10 @@ export function ApplyForm({ jobId, screeningQuestions = [] }: { jobId: string; s
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
         <PhoneField />
-        <Field label="Nationality" name="nationality" optional />
+        <Field label="Nationality" name="nationality" required />
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-        <Field label="Current location" name="currentLocation" optional />
+        <Field label="Current location" name="currentLocation" required />
         <Field label="Current role" name="currentRole" optional />
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
@@ -100,7 +100,7 @@ export function ApplyForm({ jobId, screeningQuestions = [] }: { jobId: string; s
         </div>
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-        <Field label="LinkedIn URL" name="linkedinUrl" type="url" placeholder="https://linkedin.com/in/..." optional />
+        <Field label="LinkedIn URL" name="linkedinUrl" type="url" placeholder="https://linkedin.com/in/..." required />
         <Field label="Portfolio URL" name="portfolioUrl" type="url" placeholder="https://..." optional />
       </div>
 

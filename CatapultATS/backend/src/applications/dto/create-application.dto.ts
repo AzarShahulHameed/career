@@ -20,11 +20,11 @@ export class CreateApplicationDto {
   @IsOptional() @IsString()
   phone?: string;
 
-  @IsOptional() @IsString()
-  nationality?: string;
+  @IsString() @IsNotEmpty()
+  nationality: string;
 
-  @IsOptional() @IsString()
-  currentLocation?: string;
+  @IsString() @IsNotEmpty()
+  currentLocation: string;
 
   @IsOptional() @IsString()
   currentRole?: string;
@@ -33,8 +33,8 @@ export class CreateApplicationDto {
   yearsExperience?: string;
 
   @Transform(emptyToUndefined)
-  @IsOptional() @IsUrl()
-  linkedinUrl?: string;
+  @IsUrl()
+  linkedinUrl: string;
 
   @Transform(emptyToUndefined)
   @IsOptional() @IsUrl()

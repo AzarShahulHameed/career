@@ -41,9 +41,7 @@ export const api = {
   patch: <T>(path: string, body?: unknown, token?: string) =>
     request<T>(path, { method: 'PATCH', body: JSON.stringify(body), token }),
   delete: <T>(path: string, token?: string) => request<T>(path, { method: 'DELETE', token }),
-};
-
-export interface Company {
+};export interface Company {
   id: string;
   name: string;
   createdAt: string;
@@ -155,4 +153,15 @@ export interface Reviewer {
   isActive: boolean;
   isOwner: boolean;
   createdAt: string;
+}
+
+export interface AuditLogEntry {
+  id: string;
+  action: string;
+  entityType: string;
+  entityId: string | null;
+  description: string;
+  metadata: Record<string, unknown> | null;
+  createdAt: string;
+  actor: { id: string; name: string; email: string };
 }
