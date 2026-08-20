@@ -44,6 +44,8 @@ function AdminApplicationsList() {
   const jobId = searchParams.get('jobId') ?? '';
   const companyId = searchParams.get('companyId') ?? '';
   const source = searchParams.get('source') ?? '';
+  const sortBy = searchParams.get('sortBy') ?? 'createdAt';
+  const sortOrder = (searchParams.get('sortOrder') as 'asc' | 'desc') ?? 'desc';
   const page = Number(searchParams.get('page') ?? '1');
 
   const [loading, setLoading] = useState(true);
@@ -85,10 +87,25 @@ function AdminApplicationsList() {
     updateParams({ [key]: value || null, page: 1 });
   }
 
+  // Clicking a sortable column: same field toggles asc/desc, a different
+  // field starts fresh at asc (except a couple of fields, like Applied
+  // date and ATS score, where "most recent/highest first" is the more
+  // useful default first click).
+  function toggleSort(field: string) {
+    const DESC_FIRST = new Set(['createdAt', 'atsScore']);
+    if (sortBy === field) {
+      updateParams({ sortOrder: sortOrder === 'asc' ? 'desc' : 'asc', page: 1 });
+    } else {
+      updateParams({ sortBy: field, sortOrder: DESC_FIRST.has(field) ? 'desc' : 'asc', page: 1 });
+    }
+  }
+
   function buildQuery(forExport = false) {
     const qs = new URLSearchParams({
       page: forExport ? '1' : String(page),
       pageSize: forExport ? '2000' : '20',
+      sortBy,
+      sortOrder,
     });
     if (statusFilter !== 'ALL') qs.set('status', statusFilter);
     if (department) qs.set('department', department);
@@ -115,7 +132,7 @@ function AdminApplicationsList() {
     setData(result);
     setLoading(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [statusFilter, department, location, employmentType, jobId, companyId, source, page]);
+  }, [statusFilter, department, location, employmentType, jobId, companyId, source, sortBy, sortOrder, page]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -235,26 +252,39 @@ function AdminApplicationsList() {
         <table className="w-full text-sm glass-panel rounded-2xl overflow-hidden">
           <thead>
             <tr className="bg-lineSoft/60 border-b border-line text-left">
-              <th className="font-mono text-[11px] uppercase tracking-wide text-ink/50 font-medium px-4 py-2.5">Candidate</th>
-              <th className="font-mono text-[11px] uppercase tracking-wide text-ink/50 font-medium px-4 py-2.5">Role</th>
-              <th className="font-mono text-[11px] uppercase tracking-wide text-ink/50 font-medium px-4 py-2.5">Company</th>
-              <th className="font-mono text-[11px] uppercase tracking-wide text-ink/50 font-medium px-4 py-2.5">Source</th>
-              <th className="font-mono text-[11px] uppercase tracking-wide text-ink/50 font-medium px-4 py-2.5">Applied</th>
-              <th className="font-mono text-[11px] uppercase tracking-wide text-ink/50 font-medium px-4 py-2.5">ATS score</th>
-              <th className="font-mono text-[11px] uppercase tracking-wide text-ink/50 font-medium px-4 py-2.5">Status</th>
+              <SortableTh field="candidateName" label="Candidate" sortBy={sortBy} sortOrder={sortOrder} onSort={toggleSort} />
+              <SortableTh field="jobTitle" label="Role" sortBy={sortBy} sortOrder={sortOrder} onSort={toggleSort} />
+              <SortableTh field="company" label="Company" sortBy={sortBy} sortOrder={sortOrder} onSort={toggleSort} />
+              <SortableTh field="source" label="Source" sortBy={sortBy} sortOrder={sortOrder} onSort={toggleSort} />
+              <SortableTh field="createdAt" label="Applied" sortBy={sortBy} sortOrder={sortOrder} onSort={toggleSort} />
+              <SortableTh field="atsScore" label="ATS score" sortBy={sortBy} sortOrder={sortOrder} onSort={toggleSort} />
+              <SortableTh field="status" label="Status" sortBy={sortBy} sortOrder={sortOrder} onSort={toggleSort} />
             </tr>
           </thead>
           <tbody>
             {data.items.map((app, i) => (
               <tr
                 key={app.id}
-                onClick={() => { router.push(`/admin/applications/${app.id}`); }}
+                onClick={() => window.open(`/admin/applications/${app.id}`, '_blank', 'noopener,noreferrer')}
                 className={[
                   'border-b border-lineSoft last:border-b-0 cursor-pointer hover:bg-accentSoft/30 transition-colors',
                   i % 2 === 1 ? 'bg-lineSoft/20' : '',
                 ].join(' ')}
               >
-                <td className="px-4 py-3 font-medium">{app.candidateName}</td>
+                <td className="px-4 py-3 font-medium">
+                  {/* A real anchor (not just the row's onClick) so middle-click,
+                      Cmd/Ctrl-click, and "open in new tab" from the right-click
+                      menu all work natively too, not just a plain left-click. */}
+                  <a
+                    href={`/admin/applications/${app.id}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={(e) => e.stopPropagation()}
+                    className="hover:underline"
+                  >
+                    {app.candidateName}
+                  </a>
+                </td>
                 <td className="px-4 py-3 text-ink/70">{app.job.title}</td>
                 <td className="px-4 py-3 text-ink/50">{app.job.company?.name ?? '—'}</td>
                 <td className="px-4 py-3 text-ink/50 capitalize">{app.source}</td>
@@ -290,6 +320,26 @@ function AdminApplicationsList() {
         </div>
       )}
     </div>
+  );
+}
+
+function SortableTh({
+  field, label, sortBy, sortOrder, onSort,
+}: { field: string; label: string; sortBy: string; sortOrder: 'asc' | 'desc'; onSort: (field: string) => void }) {
+  const active = sortBy === field;
+  return (
+    <th
+      onClick={() => onSort(field)}
+      className={[
+        'font-mono text-[11px] uppercase tracking-wide font-medium px-4 py-2.5 cursor-pointer select-none whitespace-nowrap',
+        active ? 'text-accent' : 'text-ink/50 hover:text-ink',
+      ].join(' ')}
+    >
+      <span className="inline-flex items-center gap-1">
+        {label}
+        <span className={active ? 'opacity-100' : 'opacity-0'}>{sortOrder === 'asc' ? '▲' : '▼'}</span>
+      </span>
+    </th>
   );
 }
 

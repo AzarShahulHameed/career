@@ -127,6 +127,7 @@ export class JobsService {
       if (dto.screeningQuestions !== undefined) {
         const incoming = dto.screeningQuestions;
         const existing = await tx.screeningQuestion.findMany({ where: { jobId: id } });
+        const existingIds = new Set(existing.map((q) => q.id));
         const incomingIds = new Set(incoming.filter((q) => q.id).map((q) => q.id));
 
         for (const old of existing) {
@@ -149,7 +150,13 @@ export class JobsService {
             disqualifyingAnswer: q.disqualifyingAnswer || null,
             archived: false,
           };
-          if (q.id) {
+          // Only trust a client-supplied id as "update this row" if it
+          // actually belongs to THIS job. An id that doesn't (e.g. a bug
+          // that forgot to strip ids when cloning another job's
+          // questions, or a tampered request) falls through to a fresh
+          // create instead of silently overwriting an unrelated job's
+          // question content.
+          if (q.id && existingIds.has(q.id)) {
             await tx.screeningQuestion.update({ where: { id: q.id }, data });
           } else {
             await tx.screeningQuestion.create({ data: { ...data, jobId: id } });

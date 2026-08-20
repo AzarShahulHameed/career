@@ -258,6 +258,24 @@ export class ApplicationsService {
   async findAll(query: QueryApplicationsDto) {
     const page = query.page ?? 1;
     const pageSize = query.pageSize ?? 20;
+    const sortOrder = query.sortOrder ?? 'desc';
+
+    // Prisma needs a differently-shaped orderBy depending on whether the
+    // field lives directly on Application or through its Job/Company
+    // relation — map the flat sortBy name to the right shape here rather
+    // than exposing that structure to the frontend.
+    const orderBy: Record<string, unknown> = (() => {
+      switch (query.sortBy) {
+        case 'candidateName': return { candidateName: sortOrder };
+        case 'atsScore': return { atsScore: { sort: sortOrder, nulls: 'last' } };
+        case 'status': return { status: sortOrder };
+        case 'source': return { source: sortOrder };
+        case 'jobTitle': return { job: { title: sortOrder } };
+        case 'company': return { job: { company: { name: sortOrder } } };
+        case 'createdAt':
+        default: return { createdAt: sortOrder };
+      }
+    })();
 
     const where = {
       ...(query.status ? { status: query.status } : {}),
@@ -279,7 +297,7 @@ export class ApplicationsService {
       this.prisma.application.findMany({
         where,
         include: { job: { include: { company: true } }, reviewer: { select: { id: true, name: true } } },
-        orderBy: { createdAt: 'desc' },
+        orderBy,
         skip: (page - 1) * pageSize,
         take: pageSize,
       }),

@@ -12,6 +12,7 @@ export default function AdminJobsPage() {
   const [companies, setCompanies] = useState<Company[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [editingJob, setEditingJob] = useState<Job | null>(null);
+  const [prefillJob, setPrefillJob] = useState<Job | null>(null); // drives form field defaults for both edit AND clone
   const [showNewCompany, setShowNewCompany] = useState(false);
   const [newCompanyName, setNewCompanyName] = useState('');
   const [creatingCompany, setCreatingCompany] = useState(false);
@@ -63,6 +64,7 @@ export default function AdminJobsPage() {
 
   function openCreate() {
     setEditingJob(null);
+    setPrefillJob(null);
     resetArrayFields();
     setError(null);
     setShowForm(true);
@@ -70,6 +72,7 @@ export default function AdminJobsPage() {
 
   function openEdit(job: Job) {
     setEditingJob(job);
+    setPrefillJob(job);
     setResponsibilities(job.responsibilities.length ? job.responsibilities : ['']);
     setRequirements(job.requirements.length ? job.requirements : ['']);
     setNiceToHave(job.niceToHave.length ? job.niceToHave : ['']);
@@ -79,9 +82,30 @@ export default function AdminJobsPage() {
     setShowForm(true);
   }
 
+  // Clone: prefill every field from an existing posting, but as a NEW job
+  // (editingJob stays null, so submit does a POST, not a PATCH) — including
+  // dropping each screening question's id, so they're created fresh
+  // against the new job instead of accidentally referencing the source
+  // job's question rows. Deadline and featured status intentionally reset,
+  // since those are usually specific to the original posting.
+  function openClone(job: Job) {
+    setEditingJob(null);
+    setPrefillJob({ ...job, deadline: null });
+    setResponsibilities(job.responsibilities.length ? job.responsibilities : ['']);
+    setRequirements(job.requirements.length ? job.requirements : ['']);
+    setNiceToHave(job.niceToHave.length ? job.niceToHave : ['']);
+    setIsFeatured(false);
+    setScreeningQuestions(
+      (job.screeningQuestions ?? []).filter((q) => !q.archived).map((q) => ({ ...draftFromQuestion(q), id: undefined })),
+    );
+    setError(null);
+    setShowForm(true);
+  }
+
   function closeForm() {
     setShowForm(false);
     setEditingJob(null);
+    setPrefillJob(null);
     resetArrayFields();
   }
 
@@ -209,6 +233,11 @@ export default function AdminJobsPage() {
               Editing &ldquo;{editingJob.title}&rdquo;
             </p>
           )}
+          {!editingJob && prefillJob && (
+            <p className="text-sm text-accent bg-accentSoft/50 border border-accent/20 px-3 py-2 rounded-lg">
+              Cloned from &ldquo;{prefillJob.title}&rdquo; — review and publish as a new posting.
+            </p>
+          )}
           {companies.length === 0 && (
             <p className="text-sm text-status-review bg-status-review/5 border border-status-review/20 px-3 py-2">
               No hiring entities yet — add one below before you can publish a posting.
@@ -236,7 +265,7 @@ export default function AdminJobsPage() {
                 </button>
               </div>
             ) : (
-              <select name="companyId" required defaultValue={editingJob?.companyId ?? ''}
+              <select name="companyId" required defaultValue={prefillJob?.companyId ?? ''}
                       className="w-full sm:w-80 border border-line rounded-xl px-3.5 py-2.5 text-sm focus:border-accent focus:ring-2 focus:ring-accent/20 outline-none transition-shadow">
                 <option value="" disabled>Select entity…</option>
                 {companies.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
@@ -246,14 +275,14 @@ export default function AdminJobsPage() {
           </div>
 
           <div className="grid sm:grid-cols-3 gap-4">
-            <Input label="Title" name="title" required defaultValue={editingJob?.title} />
-            <Input label="Department" name="department" required defaultValue={editingJob?.department} />
-            <Input label="Location" name="location" required defaultValue={editingJob?.location} />
+            <Input label="Title" name="title" required defaultValue={prefillJob?.title} />
+            <Input label="Department" name="department" required defaultValue={prefillJob?.department} />
+            <Input label="Location" name="location" required defaultValue={prefillJob?.location} />
           </div>
           <div className="grid sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium mb-1.5">Employment type</label>
-              <select name="employmentType" defaultValue={editingJob?.employmentType ?? 'FULL_TIME'}
+              <select name="employmentType" defaultValue={prefillJob?.employmentType ?? 'FULL_TIME'}
                       className="w-full border border-line rounded-xl px-3.5 py-2.5 text-sm focus:border-accent focus:ring-2 focus:ring-accent/20 outline-none transition-shadow">
                 <option value="FULL_TIME">Full time</option>
                 <option value="PART_TIME">Part time</option>
@@ -263,7 +292,7 @@ export default function AdminJobsPage() {
             </div>
             <div>
               <label className="block text-sm font-medium mb-1.5">Region</label>
-              <select name="region" defaultValue={editingJob?.region ?? 'BOTH'}
+              <select name="region" defaultValue={prefillJob?.region ?? 'BOTH'}
                       className="w-full border border-line rounded-xl px-3.5 py-2.5 text-sm focus:border-accent focus:ring-2 focus:ring-accent/20 outline-none transition-shadow">
                 <option value="BOTH">Both (UAE + India)</option>
                 <option value="UAE">UAE only</option>
@@ -274,7 +303,7 @@ export default function AdminJobsPage() {
           </div>
           <div>
             <label className="block text-sm font-medium mb-1.5">Description</label>
-            <textarea name="description" required rows={4} defaultValue={editingJob?.description}
+            <textarea name="description" required rows={4} defaultValue={prefillJob?.description}
                       className="w-full border border-line rounded-xl px-3.5 py-2.5 text-sm focus:border-accent focus:ring-2 focus:ring-accent/20 outline-none transition-shadow" />
           </div>
 
@@ -285,10 +314,10 @@ export default function AdminJobsPage() {
           <ScreeningQuestionsField items={screeningQuestions} setItems={setScreeningQuestions} />
 
           <div className="grid sm:grid-cols-2 gap-4">
-            <Input label="Salary range (optional)" name="salaryRange" placeholder="e.g. AED 15,000 – 22,000/month" defaultValue={editingJob?.salaryRange ?? undefined} />
+            <Input label="Salary range (optional)" name="salaryRange" placeholder="e.g. AED 15,000 – 22,000/month" defaultValue={prefillJob?.salaryRange ?? undefined} />
             <div>
               <label className="block text-sm font-medium mb-1.5">Application deadline (optional)</label>
-              <input type="date" name="deadline" defaultValue={editingJob?.deadline ? editingJob.deadline.slice(0, 10) : undefined} className="w-full border border-line rounded-xl px-3.5 py-2.5 text-sm focus:border-accent focus:ring-2 focus:ring-accent/20 outline-none transition-shadow" />
+              <input type="date" name="deadline" defaultValue={prefillJob?.deadline ? prefillJob.deadline.slice(0, 10) : undefined} className="w-full border border-line rounded-xl px-3.5 py-2.5 text-sm focus:border-accent focus:ring-2 focus:ring-accent/20 outline-none transition-shadow" />
             </div>
           </div>
 
@@ -354,6 +383,9 @@ export default function AdminJobsPage() {
                   )}
                   <button type="button" onClick={() => openEdit(job)} className="text-sm text-accent hover:underline">
                     Edit
+                  </button>
+                  <button type="button" onClick={() => openClone(job)} className="text-sm text-accent hover:underline">
+                    Clone
                   </button>
                   <button type="button" onClick={() => handleDelete(job)} className="text-sm text-status-rejected hover:underline">
                     Delete
